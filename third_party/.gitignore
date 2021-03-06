@@ -1,0 +1,6 @@
+tools/in/*
+tools/example.in
+tools/example.out
+tools/target/*
+tools/out.svg
+tools/seeds.txt
