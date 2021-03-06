@@ -1,3 +1,17 @@
+# sol-AtCoderHC001
+
+https://atcoder.jp/contests/ahc001/tasks/ahc001_a
+
+## note
+
+予め以下を実行する必要がある(rust が必要)。
+
+```
+cd third_party/tools
+cargo build --release --bin gen
+cargo build --release --bin vis
+```
+
 # mmworkspace
 
 workspace for heuristic contest

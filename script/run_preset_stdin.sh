@@ -10,4 +10,6 @@ for FILE in `ls stdin`; do
   FILE_STDERR="out/$ID.err.txt"
 
   ./bin/run.sh < $FILE_STDIN > $FILE_STDOUT 2> $FILE_STDERR
+  FILE_IMAGE=$(./bin/visualize.sh `readlink -f $FILE_STDIN` `readlink -f $FILE_STDOUT`)
+  mv $FILE_IMAGE "out/$ID.out."${FILE_IMAGE##*.}""
 done

@@ -1,0 +1,10 @@
+---
+BasedOnStyle: 'Chromium'
+Standard: 'Cpp11'
+AlignConsecutiveAssignments: false
+ColumnLimit: 100
+PointerAlignment: 'Left'
+SpaceAfterCStyleCast: false
+SpacesInAngles: false
+UseTab: 'Never'
+SortIncludes: false
