@@ -1,0 +1,10 @@
+<html>
+<body>
+<img src="out.svg" width="1000" height="1000" id="image">
+<script>
+  setInterval(() => {
+    document.getElementById('image').src = "out.svg?" + Date.now().toString();
+  }, 5000);
+</script>
+</body>
+</html>
