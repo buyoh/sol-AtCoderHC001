@@ -1,4 +1,6 @@
+#ifndef CONCATED_SRC
 #include "header.hpp"
+#endif
 
 struct Query {
   int y, x, r;
@@ -43,7 +45,7 @@ vector<Rect> solve(const vector<Query>& queries) {
 double calcScore(const vector<Query>& queries, const vector<Rect>& rects) {
   const int N = queries.size();
   assert(queries.size() == rects.size());
-  double total;
+  double total = 0.0;
   repeat(i, N) {
     auto& query = queries[i];
     auto& rect = rects[i];

@@ -1,3 +1,6 @@
+#ifndef HEADER_HPP__
+#define HEADER_HPP__
+
 #pragma GCC optimize ("O3")
 #include <bits/stdc++.h>
 
@@ -119,3 +122,5 @@ public:
 };
 MaiScanner scanner(stdin);
 MaiPrinter printer(stdout);
+
+#endif  // HEADER_HPP__
