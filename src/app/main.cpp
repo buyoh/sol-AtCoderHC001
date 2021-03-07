@@ -40,13 +40,13 @@ double calcScore(const vector<Query>& queries, const vector<Rect>& rects) {
     auto& query = queries[i];
     auto& rect = rects[i];
     if (rect.in(query.y, query.x)) {
-      double s = rect.x * rect.y;
-      double mi = min<double>(s, query.r);
-      double ma = max<double>(s, query.r);
+      int s = rect.w * rect.h;
+      double mi = min<int>(s, query.r);
+      double ma = max<int>(s, query.r);
       total += 1.0 - (1.0 - mi / ma) * (1.0 - mi / ma);
     }
   }
-  return total * 1e9;
+  return total * 1e4;
 }
 
 // ----------------------------------------------------------------------------
@@ -60,11 +60,16 @@ class Solver {
   vector<Rect> results() const { return rects_; }
 
  private:
+  void solve00(const Timer<>& timer);
+  void solve10(const Timer<>& timer);
+  void solve20(const Timer<>& timer);
+
+  // TODO: rect + query structure?
   vector<Query> queries_;
   vector<Rect> rects_;
 };
 
-void Solver::solve() {
+void Solver::solve00(const Timer<>& timer) {
   const int N = queries_.size();
   rects_.resize(N);
   repeat(i, N) {
@@ -73,18 +78,26 @@ void Solver::solve() {
     rects_[i].w = 1;
     rects_[i].h = 1;
   }
+}
 
-  Timer<> timer;
+void Solver::solve10(const Timer<>& timer) {
+  const int N = queries_.size();
 
-  int tick_score_dump = 0;
-  while (timer.toc() < 1990) {
-    int i = rand(0, N - 1);
+  vector<int> targets(N);
+  iota(all(targets), 0);
+
+  repeat(_, 500000) {
+    int vi = rand(0, int(targets.size()) - 1);
+    int i = targets[vi];
     const auto& query = queries_[i];
-    if (query.r <= rects_[i].area())
+    bool expandable = query.r > rects_[i].area();
+    if (!expandable) {
+      targets.erase(targets.begin() + vi);
       continue;
+    }
     auto rect_old = rects_[i];
     auto r = rects_[i];
-    while (true) {
+    repeat(_, 9) {
       int k = rand(0, 3);
       if (k == 0) {
         if (r.x <= 0)
@@ -116,11 +129,87 @@ void Solver::solve() {
     } else {
       rects_[i] = r;
     }
+  }
+}
+
+void Solver::solve20(const Timer<>& timer) {
+  const int N = queries_.size();
+  int tick_score_dump = 2;
+  while (timer.toc() < 1990) {
+    int i = rand(0, N - 1);
+    const auto& query = queries_[i];
+    bool expandable = query.r > rects_[i].area();
+    // if (!expandable)
+    //   continue;
+    auto rect_old = rects_[i];
+    auto r = rects_[i];
+    repeat(_, 99) {
+      int k = rand(0, 3);
+      // TODO:
+      if (!expandable)
+        k += 4;
+      if (k == 0) {
+        if (r.x <= 0 || !expandable)
+          continue;
+        r.x -= 1;
+        r.w += 1;
+        break;
+      } else if (k == 1) {
+        if (r.x + r.w >= WMAX || !expandable)
+          continue;
+        r.w += 1;
+        break;
+      } else if (k == 2) {
+        if (r.y <= 0 || !expandable)
+          continue;
+        r.y -= 1;
+        r.h += 1;
+        break;
+      } else if (k == 3) {
+        if (r.y + r.h >= WMAX || !expandable)
+          continue;
+        r.h += 1;
+        break;
+      } else if (k == 4) {
+        if (r.x <= 0 || r.x + r.w - 1 <= query.x)
+          continue;
+        r.x -= 1;
+        break;
+      } else if (k == 5) {
+        if (r.x + r.w >= WMAX || query.x <= r.x)
+          continue;
+        r.x += 1;
+        break;
+      } else if (k == 6) {
+        if (r.y <= 0 || r.y + r.h - 1 <= query.y)
+          continue;
+        r.y -= 1;
+        break;
+      } else if (k == 7) {
+        if (r.y + r.h >= WMAX || query.y <= r.y)
+          continue;
+        r.y += 1;
+        break;
+      }
+    }
+    rects_[i] = {-8, -8, 1, 1};
+    if (Algo::checkHit(rects_, r)) {
+      rects_[i] = rect_old;
+    } else {
+      rects_[i] = r;
+    }
     if (tick_score_dump < timer.toc() / 100) {
       tick_score_dump++;
       clog << calcScore(queries_, rects_) << '\n';
     }
   }
+}
+
+void Solver::solve() {
+  Timer<> timer;
+  solve00(timer);
+  solve10(timer);
+  solve20(timer);
 }
 
 // ----------------------------------------------------------------------------
