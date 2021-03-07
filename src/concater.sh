@@ -9,5 +9,6 @@ cd src
 cat <<EOL | xargs cat | $PBCOPY 
 concater_def.txt
 app/header.hpp
+app/basic.hpp
 app/main.cpp
 EOL
