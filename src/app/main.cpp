@@ -32,6 +32,12 @@ bool checkHit(const vector<Rect>& rects, const Rect& rect) {
 
 }  // namespace Algo
 
+inline double calcScore(int area1, int area2) {
+  double mi = min<int>(area1, area2);
+  double ma = max<int>(area1, area2);
+  return 1.0 - (1.0 - mi / ma) * (1.0 - mi / ma);
+}
+
 double calcScore(const vector<Query>& queries, const vector<Rect>& rects) {
   const int N = queries.size();
   assert(queries.size() == rects.size());
@@ -135,7 +141,17 @@ void Solver::solve10(const Timer<>& timer) {
 void Solver::solve20(const Timer<>& timer) {
   const int N = queries_.size();
   int tick_score_dump = 2;
-  while (timer.toc() < 1990) {
+
+  double best_score = calcScore(queries_, rects_);
+  vector<Rect> best_snap = rects_;
+  int best_life = 0;
+
+  int lop = 0;
+  int time;
+  while ((time = timer.toc()) < 1990) {
+    // TODO: 沙汰の実装。
+    // 基準値を設けておき、それに届かないものを消す。
+    // 1つ当たりどんなにひどくでも0点、良くても1点
     int i = rand(0, N - 1);
     const auto& query = queries_[i];
     bool expandable = query.r > rects_[i].area();
@@ -143,15 +159,19 @@ void Solver::solve20(const Timer<>& timer) {
     //   continue;
     auto rect_old = rects_[i];
     auto r = rects_[i];
+    int amp = 1;
     repeat(_, 99) {
-      int k = rand(0, 3);
-      // TODO:
+      int k;
+      amp = rand(1, 5 + 49 * (2000 - time) / 2000);
       if (!expandable)
-        k += 4;
+        k = rand(4, 7);
+      else
+        k = rand(0, 7);
+      // TODO: shrink の実装
       if (k == 0) {
         if (r.x <= 0 || !expandable)
           continue;
-        r.x -= 1;
+        r.x -= 1;  // TODO: 移動量を大きくする
         r.w += 1;
         break;
       } else if (k == 1) {
@@ -171,38 +191,60 @@ void Solver::solve20(const Timer<>& timer) {
         r.h += 1;
         break;
       } else if (k == 4) {
-        if (r.x <= 0 || r.x + r.w - 1 <= query.x)
+        if (r.x <= (amp - 1) || r.x + r.w - amp <= query.x)
           continue;
-        r.x -= 1;
+        r.x -= amp;
         break;
       } else if (k == 5) {
-        if (r.x + r.w >= WMAX || query.x <= r.x)
+        if (r.x + r.w >= WMAX - amp || query.x <= r.x - (amp - 1))
           continue;
-        r.x += 1;
+        r.x += amp;
         break;
       } else if (k == 6) {
-        if (r.y <= 0 || r.y + r.h - 1 <= query.y)
+        if (r.y <= (amp - 1) || r.y + r.h - amp <= query.y)
           continue;
-        r.y -= 1;
+        r.y -= amp;
         break;
       } else if (k == 7) {
-        if (r.y + r.h >= WMAX || query.y <= r.y)
+        if (r.y + r.h >= WMAX - amp || query.y <= r.y - (amp - 1))
           continue;
-        r.y += 1;
+        r.y += amp;
         break;
       }
     }
-    rects_[i] = {-8, -8, 1, 1};
+    rects_[i] = {-99, -99, 1, 1};
     if (Algo::checkHit(rects_, r)) {
       rects_[i] = rect_old;
     } else {
       rects_[i] = r;
     }
-    if (tick_score_dump < timer.toc() / 100) {
-      tick_score_dump++;
-      clog << calcScore(queries_, rects_) << '\n';
+    ++lop;
+
+    if (lop % 10 == 0) {
+      double score = calcScore(queries_, rects_);
+      if (best_score < score) {
+        best_life = 0;
+        best_score = score;
+        best_snap = rects_;
+      } else {
+        ++best_life;
+        if (best_life > 200) {
+          best_life = 0;
+          rects_ = best_snap;
+        }
+      }
+      if (tick_score_dump < timer.toc() / 100) {
+        tick_score_dump++;
+        clog << best_score << '\n';
+      }
     }
   }
+  {
+    double score = calcScore(queries_, rects_);
+    if (best_score > score)
+      rects_ = best_snap;
+  }
+  clog << "lop=" << lop << "\n";
 }
 
 void Solver::solve() {
