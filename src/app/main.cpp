@@ -30,12 +30,29 @@ bool checkHit(const vector<Rect>& rects, const Rect& rect) {
   return false;
 }
 
-}  // namespace Algo
-
 inline double calcScore(int area1, int area2) {
   double mi = min<int>(area1, area2);
   double ma = max<int>(area1, area2);
   return 1.0 - (1.0 - mi / ma) * (1.0 - mi / ma);
+}
+
+vector<int> raiseWeakRect(const vector<Query>& queries, const vector<Rect>& rects) {
+  constexpr double Threshold = 0.4;
+  const int N = queries.size();
+  assert(queries.size() == rects.size());
+  vector<int> res;
+  repeat(i, N) {
+    auto& query = queries[i];
+    auto& rect = rects[i];
+    if (!rect.in(query.y, query.x)) {
+      res.push_back(i);
+      continue;
+    }
+    if (calcScore(rect.w * rect.h, query.r) < Threshold) {
+      res.push_back(i);
+    };
+  }
+  return res;
 }
 
 double calcScore(const vector<Query>& queries, const vector<Rect>& rects) {
@@ -46,14 +63,13 @@ double calcScore(const vector<Query>& queries, const vector<Rect>& rects) {
     auto& query = queries[i];
     auto& rect = rects[i];
     if (rect.in(query.y, query.x)) {
-      int s = rect.w * rect.h;
-      double mi = min<int>(s, query.r);
-      double ma = max<int>(s, query.r);
-      total += 1.0 - (1.0 - mi / ma) * (1.0 - mi / ma);
+      total += calcScore(rect.w * rect.h, query.r);
     }
   }
   return total * 1e4;
 }
+
+}  // namespace Algo
 
 // ----------------------------------------------------------------------------
 
@@ -139,16 +155,17 @@ void Solver::solve10(const Timer<>& timer) {
 }
 
 void Solver::solve20(const Timer<>& timer) {
+  constexpr int MaxTime = 5000;
   const int N = queries_.size();
   int tick_score_dump = 2;
 
-  double best_score = calcScore(queries_, rects_);
+  double best_score = Algo::calcScore(queries_, rects_);
   vector<Rect> best_snap = rects_;
   int best_life = 0;
 
   int lop = 0;
   int time;
-  while ((time = timer.toc()) < 1990) {
+  while ((time = timer.toc()) < MaxTime - 10) {
     // TODO: 沙汰の実装。
     // 基準値を設けておき、それに届かないものを消す。
     // 1つ当たりどんなにひどくでも0点、良くても1点
@@ -162,7 +179,7 @@ void Solver::solve20(const Timer<>& timer) {
     int amp = 1;
     repeat(_, 99) {
       int k;
-      amp = rand(1, 5 + 49 * (2000 - time) / 2000);
+      amp = rand(1, 5 + 49 * (MaxTime - time) / MaxTime);
       if (!expandable)
         k = rand(4, 7);
       else
@@ -221,7 +238,7 @@ void Solver::solve20(const Timer<>& timer) {
     ++lop;
 
     if (lop % 10 == 0) {
-      double score = calcScore(queries_, rects_);
+      double score = Algo::calcScore(queries_, rects_);
       if (best_score < score) {
         best_life = 0;
         best_score = score;
@@ -238,9 +255,22 @@ void Solver::solve20(const Timer<>& timer) {
         clog << best_score << '\n';
       }
     }
+    if (lop % 10000 == 0) {
+      auto idxs = Algo::raiseWeakRect(queries_, rects_);
+      if (!idxs.empty()) {
+        // int r = rand(0, int(idxs.size() - 1));
+        // shuffle(all(idxs), randdev);
+        // rrepeat(r, min<int>(idxs.size(), 5)) {
+        //   int i = idxs[r];
+        for (int i : idxs) {
+          rects_[i].w = 1;
+          rects_[i].h = 1;
+        }
+      }
+    }
   }
   {
-    double score = calcScore(queries_, rects_);
+    double score = Algo::calcScore(queries_, rects_);
     if (best_score > score)
       rects_ = best_snap;
   }
@@ -274,7 +304,7 @@ int main() {
   }
   printer << '\n';
 #if 1
-  clog << (ll)round(calcScore(queries, ans)) << endl;
+  clog << (ll)round(Algo::calcScore(queries, ans)) << endl;
 #endif
   return 0;
 }
