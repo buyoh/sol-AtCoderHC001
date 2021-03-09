@@ -108,7 +108,7 @@ void Solver::solve10(const Timer<>& timer) {
   vector<int> targets(N);
   iota(all(targets), 0);
 
-  repeat(_, 500000) {
+  repeat(_, 500000) {  // TODO: 収束を加速させる
     int vi = rand(0, int(targets.size()) - 1);
     int i = targets[vi];
     const auto& query = queries_[i];
@@ -155,6 +155,7 @@ void Solver::solve10(const Timer<>& timer) {
 }
 
 void Solver::solve20(const Timer<>& timer) {
+  // TODO: リファクタリングをしろ
   constexpr int MaxTime = 5000;
   const int N = queries_.size();
   int tick_score_dump = 2;
@@ -166,9 +167,6 @@ void Solver::solve20(const Timer<>& timer) {
   int lop = 0;
   int time;
   while ((time = timer.toc()) < MaxTime - 10) {
-    // TODO: 沙汰の実装。
-    // 基準値を設けておき、それに届かないものを消す。
-    // 1つ当たりどんなにひどくでも0点、良くても1点
     int i = rand(0, N - 1);
     const auto& query = queries_[i];
     bool expandable = query.r > rects_[i].area();
@@ -181,14 +179,14 @@ void Solver::solve20(const Timer<>& timer) {
       int k;
       amp = rand(1, 5 + 49 * (MaxTime - time) / MaxTime);
       if (!expandable)
-        k = rand(4, 7);
+        k = rand(4, 11);
       else
-        k = rand(0, 7);
-      // TODO: shrink の実装
+        k = rand(0, 11);
       if (k == 0) {
+        // 拡大の実装
         if (r.x <= 0 || !expandable)
           continue;
-        r.x -= 1;  // TODO: 移動量を大きくする
+        r.x -= 1;
         r.w += 1;
         break;
       } else if (k == 1) {
@@ -208,21 +206,51 @@ void Solver::solve20(const Timer<>& timer) {
         r.h += 1;
         break;
       } else if (k == 4) {
+        // shrink の実装
+        // その場合、ampをアスペクト比より大きな値にする
+        // 矩形の形を変えられるようにする為。
+        amp = (r.w + r.h - 1) / r.h;
+        if (r.w <= amp || r.x + r.w - amp <= query.x)
+          continue;
+        r.w -= amp;
+        break;
+      } else if (k == 5) {
+        amp = (r.w + r.h - 1) / r.h;
+        if (r.w <= amp || query.x <= r.x - (amp - 1))
+          continue;
+        r.x += amp;
+        r.w -= amp;
+        break;
+      } else if (k == 6) {
+        amp = (r.h + r.w - 1) / r.w;
+        if (r.h <= amp || r.y + r.h - amp <= query.y)
+          continue;
+        r.h -= amp;
+        break;
+      } else if (k == 7) {
+        amp = (r.h + r.w - 1) / r.w;
+        if (r.h <= amp || query.y <= r.y - (amp - 1))
+          continue;
+        r.y += amp;
+        r.h -= amp;
+        break;
+      } else if (k == 8) {
+        // 移動の実装
         if (r.x <= (amp - 1) || r.x + r.w - amp <= query.x)
           continue;
         r.x -= amp;
         break;
-      } else if (k == 5) {
+      } else if (k == 9) {
         if (r.x + r.w >= WMAX - amp || query.x <= r.x - (amp - 1))
           continue;
         r.x += amp;
         break;
-      } else if (k == 6) {
+      } else if (k == 10) {
         if (r.y <= (amp - 1) || r.y + r.h - amp <= query.y)
           continue;
         r.y -= amp;
         break;
-      } else if (k == 7) {
+      } else if (k == 11) {
         if (r.y + r.h >= WMAX - amp || query.y <= r.y - (amp - 1))
           continue;
         r.y += amp;
@@ -237,7 +265,9 @@ void Solver::solve20(const Timer<>& timer) {
     }
     ++lop;
 
-    if (lop % 10 == 0) {
+    // if (lop % 10 == 0) {
+    {
+      // TODO: 差分計算をする
       double score = Algo::calcScore(queries_, rects_);
       if (best_score < score) {
         best_life = 0;
@@ -245,7 +275,7 @@ void Solver::solve20(const Timer<>& timer) {
         best_snap = rects_;
       } else {
         ++best_life;
-        if (best_life > 200) {
+        if (best_life > 20) {  // 20ぐらいが良さげ
           best_life = 0;
           rects_ = best_snap;
         }
@@ -256,6 +286,10 @@ void Solver::solve20(const Timer<>& timer) {
       }
     }
     if (lop % 10000 == 0) {
+      // TODO: 沙汰の実装。
+      // 基準値を設けておき、それに届かないものを消す。
+      // 1つ当たりどんなにひどくでも0点、良くても1点
+      // 1つぐらい0にしたほうがマシなケースがあるのではと勝手に推測
       auto idxs = Algo::raiseWeakRect(queries_, rects_);
       if (!idxs.empty()) {
         // int r = rand(0, int(idxs.size() - 1));
@@ -286,7 +320,7 @@ void Solver::solve() {
 
 // ----------------------------------------------------------------------------
 
-int main() {
+int main() {  // TODO: パラメータ外部入力による自動パラメータ調整機能
   int N;
   vector<Query> queries;
   vector<Rect> rects;
