@@ -126,7 +126,7 @@ void Solver::solve10(const Timer<>& timer) {
   vector<int> targets(N);
   iota(all(targets), 0);
 
-  repeat(_, 500000) {  // TODO: 収束を加速させる
+  repeat(lop, 1500) {
     int vi = rand(0, int(targets.size()) - 1);
     int i = targets[vi];
     const auto& query = queries_[i];
@@ -135,39 +135,43 @@ void Solver::solve10(const Timer<>& timer) {
       targets.erase(targets.begin() + vi);
       continue;
     }
-    auto rect_old = rects_[i];
-    auto r = rects_[i];
-    repeat(_, 9) {
-      int k = rand(0, 3);
-      if (k == 0) {
-        if (r.x <= 0)
-          continue;
-        r.x -= 1;
-        r.w += 1;
-        break;
-      } else if (k == 1) {
-        if (r.x + r.w >= WMAX)
-          continue;
-        r.w += 1;
-        break;
-      } else if (k == 2) {
-        if (r.y <= 0)
-          continue;
-        r.y -= 1;
-        r.h += 1;
-        break;
-      } else if (k == 3) {
-        if (r.y + r.h >= WMAX)
-          continue;
-        r.h += 1;
-        break;
+    repeat(tryk, 9) {
+      auto rect_old = rects_[i];
+      auto r = rects_[i];
+      int amp = 1;
+      repeat(tryc, 9) {
+        int k = rand(0, 3);
+        amp = rand(1, std::max(100 / (tryc + 1), 5));
+        if (k == 0) {
+          if (r.x <= amp - 1)
+            continue;
+          r.x -= amp;
+          r.w += amp;
+          break;
+        } else if (k == 1) {
+          if (r.x + r.w >= WMAX - amp + 1)
+            continue;
+          r.w += amp;
+          break;
+        } else if (k == 2) {
+          if (r.y <= amp - 1)
+            continue;
+          r.y -= amp;
+          r.h += amp;
+          break;
+        } else if (k == 3) {
+          if (r.y + r.h >= WMAX - amp + 1)
+            continue;
+          r.h += amp;
+          break;
+        }
       }
-    }
-    rects_[i] = {-8, -8, 1, 1};
-    if (Algo::checkHit(rects_, r)) {
-      rects_[i] = rect_old;
-    } else {
-      rects_[i] = r;
+      rects_[i] = {-8, -8, 1, 1};
+      if (Algo::checkHit(rects_, r)) {
+        rects_[i] = rect_old;
+      } else {
+        rects_[i] = r;
+      }
     }
   }
 }
@@ -181,7 +185,7 @@ void Solver::solve20(const Timer<>& timer) {
   double current_score = Algo::calcScore(queries_, rects_);
   double best_score = current_score;
   vector<Rect> best_snap = rects_;
-  int best_life = 0;
+  int best_life = 100;
 
   int lop = 0;
   int time;
@@ -297,16 +301,15 @@ void Solver::solve20(const Timer<>& timer) {
 
     // if (lop % 10 == 0) {
     {
-      // TODO: 差分計算をする
+      // 差分計算をする
       double score = Algo::calcScore(queries_, rects_);
       if (best_score < score) {
-        best_life = 0;
+        chmax(best_life, 20);
         best_score = score;
         best_snap = rects_;
       } else {
-        ++best_life;
-        if (best_life > 20) {  // 20ぐらいが良さげ
-          best_life = 0;
+        if (--best_life <= 0) {
+          best_life = 20;  // 20ぐらいが良さげ
           rects_ = best_snap;
           current_score = best_score;
         }
@@ -317,7 +320,7 @@ void Solver::solve20(const Timer<>& timer) {
       }
     }
     if (lop % 10000 == 0) {
-      // TODO: 沙汰の実装。
+      // 沙汰の実装。
       // 基準値を設けておき、それに届かないものを消す。
       // 1つ当たりどんなにひどくでも0点、良くても1点
       // 1つぐらい0にしたほうがマシなケースがあるのではと勝手に推測
@@ -336,6 +339,7 @@ void Solver::solve20(const Timer<>& timer) {
           current_score += AMPSCORE * Algo::calcScore(1, queries_[i].r);
         }
       }
+      best_life = 50;
     }
     // verify score
     // if (abs(current_score - Algo::calcScore(queries_, rects_)) > 1e-1) {
@@ -354,8 +358,30 @@ void Solver::solve20(const Timer<>& timer) {
 
 void Solver::solve() {
   Timer<> timer;
-  solve00(timer);
-  solve10(timer);
+
+  // 合議制を取る
+  {
+    double best_score = -1;
+    decltype(rects_) best_snap;
+    repeat(_, 300) {
+      solve00(timer);
+      solve10(timer);
+      double score = Algo::calcScore(queries_, rects_);  // TODO: 同じ評価基準で良いのか？
+      // 複雑にする理由はないし、以下は使わない
+      // double score = 0;
+      // repeat(i, (int)queries_.size()) {
+      //   double x = Algo::calcScore(queries_[i].r, rects_[i].area());
+      //   score += x > 0.4 ? x : 0;
+      // } 28327283
+      if (best_score < score) {
+        best_snap = rects_;
+        best_score = score;
+      }
+    }
+    clog << "solve00-10 time: " << timer.toc() << " score: " << best_score << endl;
+    rects_ = std::move(best_snap);
+  }
+
   solve20(timer);
 }
 
