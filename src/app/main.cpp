@@ -18,7 +18,25 @@ inline std::ostream& operator<<(std::ostream& o, const Timer<>& t) {
 
 // ----------------------------------------------------------------------------
 
+namespace Param {
+
+// TODO: パラメータ外部入力による自動パラメータ調整機能
+int param = 1;
+
+void applyFromCommandLine(int argc, char** argv) {
+  for (int i = 1; i + 1 < argc; i += 2) {
+    if (string("--param") == argv[i]) {
+      param = stoi(argv[i + 1]);
+    }
+  }
+}
+
+}  // namespace Param
+
+// ----------------------------------------------------------------------------
+
 constexpr int WMAX = 10000;  // 多分10001
+constexpr double AMPSCORE = 1e4;
 
 namespace Algo {
 
@@ -66,7 +84,7 @@ double calcScore(const vector<Query>& queries, const vector<Rect>& rects) {
       total += calcScore(rect.w * rect.h, query.r);
     }
   }
-  return total * 1e4;
+  return total * AMPSCORE;
 }
 
 }  // namespace Algo
@@ -160,7 +178,8 @@ void Solver::solve20(const Timer<>& timer) {
   const int N = queries_.size();
   int tick_score_dump = 2;
 
-  double best_score = Algo::calcScore(queries_, rects_);
+  double current_score = Algo::calcScore(queries_, rects_);
+  double best_score = current_score;
   vector<Rect> best_snap = rects_;
   int best_life = 0;
 
@@ -216,7 +235,7 @@ void Solver::solve20(const Timer<>& timer) {
         break;
       } else if (k == 5) {
         amp = (r.w + r.h - 1) / r.h;
-        if (r.w <= amp || query.x <= r.x - (amp - 1))
+        if (r.w <= amp || query.x <= r.x + (amp - 1))
           continue;
         r.x += amp;
         r.w -= amp;
@@ -229,7 +248,7 @@ void Solver::solve20(const Timer<>& timer) {
         break;
       } else if (k == 7) {
         amp = (r.h + r.w - 1) / r.w;
-        if (r.h <= amp || query.y <= r.y - (amp - 1))
+        if (r.h <= amp || query.y <= r.y + (amp - 1))
           continue;
         r.y += amp;
         r.h -= amp;
@@ -241,7 +260,7 @@ void Solver::solve20(const Timer<>& timer) {
         r.x -= amp;
         break;
       } else if (k == 9) {
-        if (r.x + r.w >= WMAX - amp || query.x <= r.x - (amp - 1))
+        if (r.x + r.w >= WMAX - amp || query.x <= r.x + (amp - 1))
           continue;
         r.x += amp;
         break;
@@ -251,16 +270,27 @@ void Solver::solve20(const Timer<>& timer) {
         r.y -= amp;
         break;
       } else if (k == 11) {
-        if (r.y + r.h >= WMAX - amp || query.y <= r.y - (amp - 1))
+        if (r.y + r.h >= WMAX - amp || query.y <= r.y + (amp - 1))
           continue;
         r.y += amp;
         break;
       }
     }
     rects_[i] = {-99, -99, 1, 1};
+    // TODO: 高速化
+    // オーダー改善は何も思い浮かばないので、キャッシュ高速化を考えてみる。
+    // 何か隣接する矩形にヒットしたら、そのidをstd::vectorに記録しておき、
+    // 次はそれを優先的にチェックする。高々長野県程度の隣接数のはずなので、
+    // これでも十分高速化が期待できるはずである
     if (Algo::checkHit(rects_, r)) {
+      // NG
       rects_[i] = rect_old;
     } else {
+      // OK
+      if (rect_old.area() != r.area()) {
+        current_score -= AMPSCORE * Algo::calcScore(rect_old.area(), query.r);
+        current_score += AMPSCORE * Algo::calcScore(r.area(), query.r);
+      }
       rects_[i] = r;
     }
     ++lop;
@@ -278,6 +308,7 @@ void Solver::solve20(const Timer<>& timer) {
         if (best_life > 20) {  // 20ぐらいが良さげ
           best_life = 0;
           rects_ = best_snap;
+          current_score = best_score;
         }
       }
       if (tick_score_dump < timer.toc() / 100) {
@@ -297,11 +328,21 @@ void Solver::solve20(const Timer<>& timer) {
         // rrepeat(r, min<int>(idxs.size(), 5)) {
         //   int i = idxs[r];
         for (int i : idxs) {
+          current_score -= AMPSCORE * Algo::calcScore(rects_[i].area(), queries_[i].r);
+          rects_[i].x = queries_[i].x;
+          rects_[i].y = queries_[i].y;
           rects_[i].w = 1;
           rects_[i].h = 1;
+          current_score += AMPSCORE * Algo::calcScore(1, queries_[i].r);
         }
       }
     }
+    // verify score
+    // if (abs(current_score - Algo::calcScore(queries_, rects_)) > 1e-1) {
+    //   cerr << "error: score calculation " << current_score << " "
+    //        << Algo::calcScore(queries_, rects_) << endl;
+    //   abort();
+    // }
   }
   {
     double score = Algo::calcScore(queries_, rects_);
@@ -320,7 +361,9 @@ void Solver::solve() {
 
 // ----------------------------------------------------------------------------
 
-int main() {  // TODO: パラメータ外部入力による自動パラメータ調整機能
+int main(int argc, char** argv) {
+  Param::applyFromCommandLine(argc, argv);
+
   int N;
   vector<Query> queries;
   vector<Rect> rects;
