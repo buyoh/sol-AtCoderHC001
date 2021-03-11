@@ -40,12 +40,13 @@ constexpr double AMPSCORE = 1e4;
 
 namespace Algo {
 
-bool checkHit(const vector<Rect>& rects, const Rect& rect) {
-  for (auto& r : rects) {
+int checkHitIndex(const vector<Rect>& rects, const Rect& rect) {
+  repeat(i, (int)rects.size()) {
+    auto& r = rects[i];
     if (rect.crashTo(r))
-      return true;
+      return i;
   }
-  return false;
+  return -1;
 }
 
 inline double calcScore(int area1, int area2) {
@@ -167,7 +168,7 @@ void Solver::solve10(const Timer<>& timer) {
         }
       }
       rects_[i] = {-8, -8, 1, 1};
-      if (Algo::checkHit(rects_, r)) {
+      if (Algo::checkHitIndex(rects_, r) >= 0) {
         rects_[i] = rect_old;
       } else {
         rects_[i] = r;
@@ -187,6 +188,9 @@ void Solver::solve20(const Timer<>& timer) {
   vector<Rect> best_snap = rects_;
   int best_life = 100;
 
+  // 既に接触したことのあるIDの列
+  vector<vector<int>> hitting_history(N);
+
   int lop = 0;
   int time;
   while ((time = timer.toc()) < MaxTime - 10) {
@@ -197,6 +201,8 @@ void Solver::solve20(const Timer<>& timer) {
     //   continue;
     auto rect_old = rects_[i];
     auto r = rects_[i];
+
+    bool never_hit = false;
     int amp = 1;
     repeat(_, 99) {
       int k;
@@ -236,6 +242,7 @@ void Solver::solve20(const Timer<>& timer) {
         if (r.w <= amp || r.x + r.w - amp <= query.x)
           continue;
         r.w -= amp;
+        never_hit = true;
         break;
       } else if (k == 5) {
         amp = (r.w + r.h - 1) / r.h;
@@ -243,12 +250,14 @@ void Solver::solve20(const Timer<>& timer) {
           continue;
         r.x += amp;
         r.w -= amp;
+        never_hit = true;
         break;
       } else if (k == 6) {
         amp = (r.h + r.w - 1) / r.w;
         if (r.h <= amp || r.y + r.h - amp <= query.y)
           continue;
         r.h -= amp;
+        never_hit = true;
         break;
       } else if (k == 7) {
         amp = (r.h + r.w - 1) / r.w;
@@ -256,6 +265,7 @@ void Solver::solve20(const Timer<>& timer) {
           continue;
         r.y += amp;
         r.h -= amp;
+        never_hit = true;
         break;
       } else if (k == 8) {
         // 移動の実装
@@ -285,8 +295,24 @@ void Solver::solve20(const Timer<>& timer) {
     // オーダー改善は何も思い浮かばないので、キャッシュ高速化を考えてみる。
     // 何か隣接する矩形にヒットしたら、そのidをstd::vectorに記録しておき、
     // 次はそれを優先的にチェックする。高々長野県程度の隣接数のはずなので、
-    // これでも十分高速化が期待できるはずである
-    if (Algo::checkHit(rects_, r)) {
+    // これでも十分高速化が期待できるはずである→そうでもなかった
+    bool hit = false;
+    if (!never_hit) {
+      for (auto j : hitting_history[i]) {
+        if (r.crashTo(rects_[j])) {
+          hit = true;
+          break;
+        }
+      }
+      if (!hit) {
+        int h = Algo::checkHitIndex(rects_, r);
+        if (h >= 0) {
+          hit = true;
+          hitting_history[i].push_back(h);  // note: 重複しない
+        }
+      }
+    }
+    if (hit) {
       // NG
       rects_[i] = rect_old;
     } else {
