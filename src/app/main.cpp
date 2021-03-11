@@ -192,8 +192,8 @@ void Solver::solve20(const Timer<>& timer) {
   vector<vector<int>> hitting_history(N);
 
   int lop = 0;
-  int time;
-  while ((time = timer.toc()) < MaxTime - 10) {
+  int time = 0;
+  while ((lop & 127) || (time = timer.toc()) < MaxTime - 10) {
     int i = rand(0, N - 1);
     const auto& query = queries_[i];
     bool expandable = query.r > rects_[i].area();
@@ -328,10 +328,9 @@ void Solver::solve20(const Timer<>& timer) {
     // if (lop % 10 == 0) {
     {
       // 差分計算をする
-      double score = Algo::calcScore(queries_, rects_);
-      if (best_score < score) {
+      if (best_score < current_score) {
         chmax(best_life, 20);
-        best_score = score;
+        best_score = current_score;
         best_snap = rects_;
       } else {
         if (--best_life <= 0) {
@@ -340,7 +339,7 @@ void Solver::solve20(const Timer<>& timer) {
           current_score = best_score;
         }
       }
-      if (tick_score_dump < timer.toc() / 100) {
+      if (!(lop & 1023) && tick_score_dump < timer.toc() / 100) {
         tick_score_dump++;
         clog << best_score << '\n';
       }
