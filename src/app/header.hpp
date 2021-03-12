@@ -2,7 +2,9 @@
 #define HEADER_HPP__
 
 #pragma GCC optimize ("O3")
+#ifdef CONCATED_SRC  // vscodeのIntelliSenseが何故かclangに切り替わって何故か壊れる対策
 #pragma GCC target ("avx")
+#endif
 #include <bits/stdc++.h>
 
 using namespace std;

@@ -49,6 +49,25 @@ int checkHitIndex(const vector<Rect>& rects, const Rect& rect) {
   return -1;
 }
 
+bool cachedCheckHit(const vector<Rect>& rects, const Rect& rect, vector<int>& hitting_history) {
+  // TODO: 高速化
+  // オーダー改善は何も思い浮かばないので、キャッシュ高速化を考えてみる。
+  // 何か隣接する矩形にヒットしたら、そのidをstd::vectorに記録しておき、
+  // 次はそれを優先的にチェックする。高々長野県程度の隣接数のはずなので、
+  // これでも十分高速化が期待できるはずである→そうでもなかった
+  for (auto j : hitting_history) {
+    if (rect.crashTo(rects[j])) {
+      return true;
+    }
+  }
+  int h = Algo::checkHitIndex(rects, rect);
+  if (h >= 0) {
+    hitting_history.push_back(h);  // note: 重複しない
+    return true;
+  }
+  return false;
+}
+
 inline double calcScore(int area1, int area2) {
   double mi = min<int>(area1, area2);
   double ma = max<int>(area1, area2);
@@ -86,6 +105,129 @@ double calcScore(const vector<Query>& queries, const vector<Rect>& rects) {
     }
   }
   return total * AMPSCORE;
+}
+
+struct ResultMoveAdjacents {
+  bool changed;
+  Rect act;
+  bool never_hit;
+};
+
+ResultMoveAdjacents moveAdjacents(const Rect& r, const Query& query, double timeLerp) {
+  // TODO: コピーの方が良いか参照の方が良いか
+  const bool expandable = query.r >= r.w * (r.h + 1) || query.r >= (r.w + 1) * r.h;
+  // const bool expandable = query.r > r.w * r.h;
+  int amp = 1;
+  int maxAmp = 5 + static_cast<int>(timeLerp * 49);
+  repeat(_, 29) {
+    int k;
+    amp = rand(1, maxAmp);
+    if (!expandable)
+      k = rand(4, 11);
+    else
+      k = rand(0, 11);
+    if (k == 0) {
+      // 拡大の実装
+      if (r.x <= 0 || !expandable)
+        continue;
+      // r.x -= 1;
+      // r.w += 1;
+      return {true, Rect{r.y, r.x - 1, r.h, r.w + 1}, false};
+      break;
+    } else if (k == 1) {
+      if (r.x + r.w >= WMAX || !expandable)
+        continue;
+      // r.w += 1;
+      return {true, Rect{r.y, r.x, r.h, r.w + 1}, false};
+    } else if (k == 2) {
+      if (r.y <= 0 || !expandable)
+        continue;
+      // r.y -= 1;
+      // r.h += 1;
+      return {true, Rect{r.y - 1, r.x, r.h + 1, r.w}, false};
+    } else if (k == 3) {
+      if (r.y + r.h >= WMAX || !expandable)
+        continue;
+      // r.h += 1;
+      return {true, Rect{r.y, r.x, r.h + 1, r.w}, false};
+    } else if (k == 4) {
+      // shrink の実装
+      // その場合、ampをアスペクト比より大きな値にする
+      // 矩形の形を変えられるようにする為。
+      amp = (r.w + r.h - 1) / r.h;
+      if (r.w <= amp || r.x + r.w - amp <= query.x)
+        continue;
+      // r.w -= amp;
+      // never_hit = true;
+      return {true, Rect{r.y, r.x, r.h, r.w - amp}, true};
+    } else if (k == 5) {
+      amp = (r.w + r.h - 1) / r.h;
+      if (r.w <= amp || query.x <= r.x + (amp - 1))
+        continue;
+      // r.x += amp;
+      // r.w -= amp;
+      // never_hit = true;
+      return {true, Rect{r.y, r.x + amp, r.h, r.w - amp}, true};
+    } else if (k == 6) {
+      amp = (r.h + r.w - 1) / r.w;
+      if (r.h <= amp || r.y + r.h - amp <= query.y)
+        continue;
+      // r.h -= amp;
+      // never_hit = true;
+      return {true, Rect{r.y, r.x, r.h - amp, r.w}, true};
+    } else if (k == 7) {
+      amp = (r.h + r.w - 1) / r.w;
+      if (r.h <= amp || query.y <= r.y + (amp - 1))
+        continue;
+      // r.y += amp;
+      // r.h -= amp;
+      // never_hit = true;
+      return {true, Rect{r.y + amp, r.x, r.h - amp, r.w}, true};
+    } else if (k == 8) {
+      // 移動の実装
+      if (r.x <= (amp - 1) || r.x + r.w - amp <= query.x)
+        continue;
+      // r.x -= amp;
+      return {true, Rect{r.y, r.x - amp, r.h, r.w}, false};
+    } else if (k == 9) {
+      if (r.x + r.w >= WMAX - amp || query.x <= r.x + (amp - 1))
+        continue;
+      // r.x += amp;
+      return {true, Rect{r.y, r.x + amp, r.h, r.w}, false};
+    } else if (k == 10) {
+      if (r.y <= (amp - 1) || r.y + r.h - amp <= query.y)
+        continue;
+      // r.y -= amp;
+      return {true, Rect{r.y - amp, r.x, r.h, r.w}, false};
+    } else if (k == 11) {
+      if (r.y + r.h >= WMAX - amp || query.y <= r.y + (amp - 1))
+        continue;
+      // r.y += amp;
+      return {true, Rect{r.y + amp, r.x, r.h, r.w}, false};
+    }
+  }
+  return ResultMoveAdjacents{false, Rect{}, false};
+}
+
+double eliminateRects(vector<Rect>& rects,
+                      const vector<Query>& queries,
+                      const vector<int>& indices) {
+  double increase_score = 0;  // may be negative
+  // if (!indices.empty()) {
+  //   // int r = rand(0, int(idxs.size() - 1));
+  //   // shuffle(all(idxs), randdev);
+  //   // rrepeat(r, min<int>(idxs.size(), 5)) {
+  //   //   int i = idxs[r];
+  for (int i : indices) {
+    increase_score -= AMPSCORE * Algo::calcScore(rects[i].area(), queries[i].r);
+    rects[i].x = queries[i].x;
+    rects[i].y = queries[i].y;
+    rects[i].w = 1;
+    rects[i].h = 1;
+    increase_score += AMPSCORE * Algo::calcScore(1, queries[i].r);
+  }
+  // }
+  return increase_score;
 }
 
 }  // namespace Algo
@@ -131,12 +273,13 @@ void Solver::solve10(const Timer<>& timer) {
     int vi = rand(0, int(targets.size()) - 1);
     int i = targets[vi];
     const auto& query = queries_[i];
-    bool expandable = query.r > rects_[i].area();
+    const auto& r = rects_[i];
+    const bool expandable = query.r >= r.w * (r.h + 1) || query.r >= (r.w + 1) * r.h;
     if (!expandable) {
       targets.erase(targets.begin() + vi);
       continue;
     }
-    repeat(tryk, 9) {
+    repeat(tryk, 9) {  // expand only
       auto rect_old = rects_[i];
       auto r = rects_[i];
       int amp = 1;
@@ -178,7 +321,6 @@ void Solver::solve10(const Timer<>& timer) {
 }
 
 void Solver::solve20(const Timer<>& timer) {
-  // TODO: リファクタリングをしろ
   constexpr int MaxTime = 5000;
   const int N = queries_.size();
   int tick_score_dump = 2;
@@ -196,134 +338,26 @@ void Solver::solve20(const Timer<>& timer) {
   while ((lop & 127) || (time = timer.toc()) < MaxTime - 10) {
     int i = rand(0, N - 1);
     const auto& query = queries_[i];
-    bool expandable = query.r > rects_[i].area();
-    // if (!expandable)
-    //   continue;
     auto rect_old = rects_[i];
-    auto r = rects_[i];
 
-    bool never_hit = false;
-    int amp = 1;
-    repeat(_, 99) {
-      int k;
-      amp = rand(1, 5 + 49 * (MaxTime - time) / MaxTime);
-      if (!expandable)
-        k = rand(4, 11);
-      else
-        k = rand(0, 11);
-      if (k == 0) {
-        // 拡大の実装
-        if (r.x <= 0 || !expandable)
-          continue;
-        r.x -= 1;
-        r.w += 1;
-        break;
-      } else if (k == 1) {
-        if (r.x + r.w >= WMAX || !expandable)
-          continue;
-        r.w += 1;
-        break;
-      } else if (k == 2) {
-        if (r.y <= 0 || !expandable)
-          continue;
-        r.y -= 1;
-        r.h += 1;
-        break;
-      } else if (k == 3) {
-        if (r.y + r.h >= WMAX || !expandable)
-          continue;
-        r.h += 1;
-        break;
-      } else if (k == 4) {
-        // shrink の実装
-        // その場合、ampをアスペクト比より大きな値にする
-        // 矩形の形を変えられるようにする為。
-        amp = (r.w + r.h - 1) / r.h;
-        if (r.w <= amp || r.x + r.w - amp <= query.x)
-          continue;
-        r.w -= amp;
-        never_hit = true;
-        break;
-      } else if (k == 5) {
-        amp = (r.w + r.h - 1) / r.h;
-        if (r.w <= amp || query.x <= r.x + (amp - 1))
-          continue;
-        r.x += amp;
-        r.w -= amp;
-        never_hit = true;
-        break;
-      } else if (k == 6) {
-        amp = (r.h + r.w - 1) / r.w;
-        if (r.h <= amp || r.y + r.h - amp <= query.y)
-          continue;
-        r.h -= amp;
-        never_hit = true;
-        break;
-      } else if (k == 7) {
-        amp = (r.h + r.w - 1) / r.w;
-        if (r.h <= amp || query.y <= r.y + (amp - 1))
-          continue;
-        r.y += amp;
-        r.h -= amp;
-        never_hit = true;
-        break;
-      } else if (k == 8) {
-        // 移動の実装
-        if (r.x <= (amp - 1) || r.x + r.w - amp <= query.x)
-          continue;
-        r.x -= amp;
-        break;
-      } else if (k == 9) {
-        if (r.x + r.w >= WMAX - amp || query.x <= r.x + (amp - 1))
-          continue;
-        r.x += amp;
-        break;
-      } else if (k == 10) {
-        if (r.y <= (amp - 1) || r.y + r.h - amp <= query.y)
-          continue;
-        r.y -= amp;
-        break;
-      } else if (k == 11) {
-        if (r.y + r.h >= WMAX - amp || query.y <= r.y + (amp - 1))
-          continue;
-        r.y += amp;
-        break;
-      }
-    }
+    auto adjres = Algo::moveAdjacents(rects_[i], query, double(time) / MaxTime);
+    ++lop;
+    if (!adjres.changed)
+      continue;
+
     rects_[i] = {-99, -99, 1, 1};
-    // TODO: 高速化
-    // オーダー改善は何も思い浮かばないので、キャッシュ高速化を考えてみる。
-    // 何か隣接する矩形にヒットしたら、そのidをstd::vectorに記録しておき、
-    // 次はそれを優先的にチェックする。高々長野県程度の隣接数のはずなので、
-    // これでも十分高速化が期待できるはずである→そうでもなかった
-    bool hit = false;
-    if (!never_hit) {
-      for (auto j : hitting_history[i]) {
-        if (r.crashTo(rects_[j])) {
-          hit = true;
-          break;
-        }
-      }
-      if (!hit) {
-        int h = Algo::checkHitIndex(rects_, r);
-        if (h >= 0) {
-          hit = true;
-          hitting_history[i].push_back(h);  // note: 重複しない
-        }
-      }
-    }
-    if (hit) {
+    if (!adjres.never_hit && Algo::cachedCheckHit(rects_, adjres.act, hitting_history[i])) {
       // NG
       rects_[i] = rect_old;
     } else {
       // OK
+      const auto& r = adjres.act;
       if (rect_old.area() != r.area()) {
         current_score -= AMPSCORE * Algo::calcScore(rect_old.area(), query.r);
         current_score += AMPSCORE * Algo::calcScore(r.area(), query.r);
       }
       rects_[i] = r;
     }
-    ++lop;
 
     // if (lop % 10 == 0) {
     {
@@ -350,20 +384,7 @@ void Solver::solve20(const Timer<>& timer) {
       // 1つ当たりどんなにひどくでも0点、良くても1点
       // 1つぐらい0にしたほうがマシなケースがあるのではと勝手に推測
       auto idxs = Algo::raiseWeakRect(queries_, rects_);
-      if (!idxs.empty()) {
-        // int r = rand(0, int(idxs.size() - 1));
-        // shuffle(all(idxs), randdev);
-        // rrepeat(r, min<int>(idxs.size(), 5)) {
-        //   int i = idxs[r];
-        for (int i : idxs) {
-          current_score -= AMPSCORE * Algo::calcScore(rects_[i].area(), queries_[i].r);
-          rects_[i].x = queries_[i].x;
-          rects_[i].y = queries_[i].y;
-          rects_[i].w = 1;
-          rects_[i].h = 1;
-          current_score += AMPSCORE * Algo::calcScore(1, queries_[i].r);
-        }
-      }
+      current_score += Algo::eliminateRects(rects_, queries_, idxs);
       best_life = 50;
     }
     // verify score
