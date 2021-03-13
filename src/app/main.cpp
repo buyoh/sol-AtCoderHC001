@@ -49,6 +49,38 @@ int checkHitIndex(const vector<Rect>& rects, const Rect& rect) {
   return -1;
 }
 
+// vector<vector<int>> createListMayHit(const vector<Query>& queries) {
+//   // 検査する必要のあるものを列挙する。
+//   // 列挙されているないインデックスは、広告制約さえ満たしていれば絶対に重複しない
+//   // 極めて細長い長方形のケースを考慮するとほぼ全部列挙されるのでダメ
+//   const int N = queries.size();
+//   vector<vector<int>> lists(N);
+//   repeat(i, N - 1) {
+//     const auto& qi = queries[i];
+//     iterate(j, i + 1, N) {
+//       const auto& qj = queries[j];
+//       if (abs(qi.x - qj.x) + abs(qi.y - qj.y) <= sushi) {  // 多分 '<'
+//         lists[i].push_back(j);
+//         lists[j].push_back(i);
+//       }
+//     }
+//   }
+//   for (auto& v : lists) {
+//     clog << v.size() << endl;
+//     v.shrink_to_fit();
+//   }
+//   return lists;
+// }
+
+// int checkHitIndex(const vector<Rect>& rects, const Rect& rect, const vector<int>& selector) {
+//   for (auto i : selector) {
+//     auto& r = rects[i];
+//     if (rect.crashTo(r))
+//       return i;
+//   }
+//   return -1;
+// }
+
 bool cachedCheckHit(const vector<Rect>& rects, const Rect& rect, vector<int>& hitting_history) {
   // TODO: 高速化
   // オーダー改善は何も思い浮かばないので、キャッシュ高速化を考えてみる。
@@ -107,14 +139,33 @@ double calcScore(const vector<Query>& queries, const vector<Rect>& rects) {
   return total * AMPSCORE;
 }
 
+struct Action {  // TODO: charでも良いはず
+  int y, x, h, w;
+  int up, left, down, right;
+  Action(int _y, int _x, int _h, int _w)
+      : y(_y), x(_x), h(_h), w(_w), up(-_y), left(-_x), down(_y + _h), right(_x + _w) {}
+  void apply(Rect& r) const {
+    r.y += y;
+    r.x += x;
+    r.h += h;
+    r.w += w;
+  }
+  void revert(Rect& r) const {
+    r.y -= y;
+    r.x -= x;
+    r.h -= h;
+    r.w -= w;
+  }
+};
+
 struct ResultMoveAdjacents {
   bool changed;
-  Rect act;
+  Action act;
   bool never_hit;
 };
 
-ResultMoveAdjacents moveAdjacents(const Rect& r, const Query& query, double timeLerp) {
-  // TODO: コピーの方が良いか参照の方が良いか
+ResultMoveAdjacents moveAdjacents(const Rect r, const Query query, double timeLerp) {
+  // コピーの方が良いか参照の方が良いか？→コピーのほうが速い
   const bool expandable = query.r >= r.w * (r.h + 1) || query.r >= (r.w + 1) * r.h;
   // const bool expandable = query.r > r.w * r.h;
   int amp = 1;
@@ -132,24 +183,24 @@ ResultMoveAdjacents moveAdjacents(const Rect& r, const Query& query, double time
         continue;
       // r.x -= 1;
       // r.w += 1;
-      return {true, Rect{r.y, r.x - 1, r.h, r.w + 1}, false};
+      return {true, Action{0, -1, 0, 1}, false};
       break;
     } else if (k == 1) {
       if (r.x + r.w >= WMAX || !expandable)
         continue;
       // r.w += 1;
-      return {true, Rect{r.y, r.x, r.h, r.w + 1}, false};
+      return {true, Action{0, 0, 0, 1}, false};
     } else if (k == 2) {
       if (r.y <= 0 || !expandable)
         continue;
       // r.y -= 1;
       // r.h += 1;
-      return {true, Rect{r.y - 1, r.x, r.h + 1, r.w}, false};
+      return {true, Action{-1, 0, 1, 0}, false};
     } else if (k == 3) {
       if (r.y + r.h >= WMAX || !expandable)
         continue;
       // r.h += 1;
-      return {true, Rect{r.y, r.x, r.h + 1, r.w}, false};
+      return {true, Action{0, 0, 1, 0}, false};
     } else if (k == 4) {
       // shrink の実装
       // その場合、ampをアスペクト比より大きな値にする
@@ -159,7 +210,7 @@ ResultMoveAdjacents moveAdjacents(const Rect& r, const Query& query, double time
         continue;
       // r.w -= amp;
       // never_hit = true;
-      return {true, Rect{r.y, r.x, r.h, r.w - amp}, true};
+      return {true, Action{0, 0, 0, -amp}, true};
     } else if (k == 5) {
       amp = (r.w + r.h - 1) / r.h;
       if (r.w <= amp || query.x <= r.x + (amp - 1))
@@ -167,14 +218,14 @@ ResultMoveAdjacents moveAdjacents(const Rect& r, const Query& query, double time
       // r.x += amp;
       // r.w -= amp;
       // never_hit = true;
-      return {true, Rect{r.y, r.x + amp, r.h, r.w - amp}, true};
+      return {true, Action{0, amp, 0, -amp}, true};
     } else if (k == 6) {
       amp = (r.h + r.w - 1) / r.w;
       if (r.h <= amp || r.y + r.h - amp <= query.y)
         continue;
       // r.h -= amp;
       // never_hit = true;
-      return {true, Rect{r.y, r.x, r.h - amp, r.w}, true};
+      return {true, Action{0, 0, -amp, 0}, true};
     } else if (k == 7) {
       amp = (r.h + r.w - 1) / r.w;
       if (r.h <= amp || query.y <= r.y + (amp - 1))
@@ -182,31 +233,62 @@ ResultMoveAdjacents moveAdjacents(const Rect& r, const Query& query, double time
       // r.y += amp;
       // r.h -= amp;
       // never_hit = true;
-      return {true, Rect{r.y + amp, r.x, r.h - amp, r.w}, true};
+      return {true, Action{amp, 0, -amp, 0}, true};
     } else if (k == 8) {
       // 移動の実装
       if (r.x <= (amp - 1) || r.x + r.w - amp <= query.x)
         continue;
       // r.x -= amp;
-      return {true, Rect{r.y, r.x - amp, r.h, r.w}, false};
+      return {true, Action{0, -amp, 0, 0}, false};
     } else if (k == 9) {
       if (r.x + r.w >= WMAX - amp || query.x <= r.x + (amp - 1))
         continue;
       // r.x += amp;
-      return {true, Rect{r.y, r.x + amp, r.h, r.w}, false};
+      return {true, Action{0, amp, 0, 0}, false};
     } else if (k == 10) {
       if (r.y <= (amp - 1) || r.y + r.h - amp <= query.y)
         continue;
       // r.y -= amp;
-      return {true, Rect{r.y - amp, r.x, r.h, r.w}, false};
+      return {true, Action{-amp, 0, 0, 0}, false};
     } else if (k == 11) {
       if (r.y + r.h >= WMAX - amp || query.y <= r.y + (amp - 1))
         continue;
       // r.y += amp;
-      return {true, Rect{r.y + amp, r.x, r.h, r.w}, false};
+      return {true, Action{amp, 0, 0, 0}, false};
     }
   }
-  return ResultMoveAdjacents{false, Rect{}, false};
+  return ResultMoveAdjacents{false, Action{0, 0, 0, 0}, false};
+}
+
+// bool tryToApplyAction_rec(vector<Rect>& rects, const vector<Query>& queries, const Action&
+// action) {
+// }
+
+pair<bool, double> tryToApplyAction_nopush(vector<Rect>& rects,
+                                           int index,
+                                           const Action& action,
+                                           const vector<Query>& queries,
+                                           vector<vector<int>>& hitting_history,
+                                           bool never_hit) {
+  Rect r1 = rects[index];
+  Rect r2 = rects[index];
+  action.apply(r2);
+  rects[index] = {-99, -99, 1, 1};
+  if (!never_hit && Algo::cachedCheckHit(rects, r2, hitting_history[index])) {
+    // NG
+    rects[index] = r1;
+    return pair<bool, double>{false, 0};
+  } else {
+    // OK
+    double score = 0;
+    if (r2.w != 0 && r2.h != 0) {
+      auto qr = queries[index].r;
+      score -= AMPSCORE * Algo::calcScore(r1.area(), qr);
+      score += AMPSCORE * Algo::calcScore(r2.area(), qr);
+    }
+    rects[index] = r2;
+    return pair<bool, double>{true, score};
+  }
 }
 
 double eliminateRects(vector<Rect>& rects,
@@ -235,6 +317,7 @@ double eliminateRects(vector<Rect>& rects,
 // ----------------------------------------------------------------------------
 
 class Solver {
+  // クラスを作る必要無かったね
  public:
   Solver(const vector<Query>& queries) : queries_(queries) {}
 
@@ -330,36 +413,28 @@ void Solver::solve20(const Timer<>& timer) {
   vector<Rect> best_snap = rects_;
   int best_life = 100;
 
+  int lop_eliminate = 0;
+
   // 既に接触したことのあるIDの列
-  vector<vector<int>> hitting_history(N);
+  vector<vector<int>> hitting_history(N);  // lop=36768128
 
   int lop = 0;
   int time = 0;
-  while ((lop & 127) || (time = timer.toc()) < MaxTime - 10) {
+  while ((lop & 127) || (time = timer.toc()) < MaxTime - 15) {
     int i = rand(0, N - 1);
     const auto& query = queries_[i];
-    auto rect_old = rects_[i];
 
     auto adjres = Algo::moveAdjacents(rects_[i], query, double(time) / MaxTime);
     ++lop;
     if (!adjres.changed)
       continue;
+    auto appres = Algo::tryToApplyAction_nopush(rects_, i, adjres.act, queries_, hitting_history,
+                                                adjres.never_hit);
+    if (!appres.first)
+      continue;
 
-    rects_[i] = {-99, -99, 1, 1};
-    if (!adjres.never_hit && Algo::cachedCheckHit(rects_, adjres.act, hitting_history[i])) {
-      // NG
-      rects_[i] = rect_old;
-    } else {
-      // OK
-      const auto& r = adjres.act;
-      if (rect_old.area() != r.area()) {
-        current_score -= AMPSCORE * Algo::calcScore(rect_old.area(), query.r);
-        current_score += AMPSCORE * Algo::calcScore(r.area(), query.r);
-      }
-      rects_[i] = r;
-    }
+    current_score += appres.second;
 
-    // if (lop % 10 == 0) {
     {
       // 差分計算をする
       if (best_score < current_score) {
@@ -378,14 +453,15 @@ void Solver::solve20(const Timer<>& timer) {
         clog << best_score << '\n';
       }
     }
-    if (lop % 10000 == 0) {
+    if (++lop_eliminate > 30000) {
+      lop_eliminate = 0;
       // 沙汰の実装。
       // 基準値を設けておき、それに届かないものを消す。
       // 1つ当たりどんなにひどくでも0点、良くても1点
       // 1つぐらい0にしたほうがマシなケースがあるのではと勝手に推測
       auto idxs = Algo::raiseWeakRect(queries_, rects_);
       current_score += Algo::eliminateRects(rects_, queries_, idxs);
-      best_life = 50;
+      best_life = 300;
     }
     // verify score
     // if (abs(current_score - Algo::calcScore(queries_, rects_)) > 1e-1) {

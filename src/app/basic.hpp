@@ -21,7 +21,7 @@ struct Query {
 };
 
 struct Rect {
-  int y, x, h, w;
+  int y, x, h, w;  // TODO: 面積を除いてshortで十分
   template <typename O>
   void print(O& o) const {
     o << x << ' ' << y << ' ' << x + w << ' ' << y + h;
