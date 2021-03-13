@@ -141,9 +141,9 @@ double calcScore(const vector<Query>& queries, const vector<Rect>& rects) {
 
 struct Action {  // TODO: charでも良いはず
   int y, x, h, w;
-  int up, left, down, right;
-  Action(int _y, int _x, int _h, int _w)
-      : y(_y), x(_x), h(_h), w(_w), up(-_y), left(-_x), down(_y + _h), right(_x + _w) {}
+  // int up, left, down, right;  // TODO: 使ったっけ
+  // Action(int _y, int _x, int _h, int _w)
+  //     : y(_y), x(_x), h(_h), w(_w), up(-_y), left(-_x), down(_y + _h), right(_x + _w) {}
   void apply(Rect& r) const {
     r.y += y;
     r.x += x;
@@ -241,7 +241,7 @@ ResultMoveAdjacents moveAdjacents(const Rect r, const Query query, double timeLe
       // r.x -= amp;
       return {true, Action{0, -amp, 0, 0}, false};
     } else if (k == 9) {
-      if (r.x + r.w >= WMAX - amp || query.x <= r.x + (amp - 1))
+      if (r.x + r.w >= WMAX - amp || query.x <= r.x + (amp - 1))  // TODO: 簡略化
         continue;
       // r.x += amp;
       return {true, Action{0, amp, 0, 0}, false};
@@ -260,8 +260,49 @@ ResultMoveAdjacents moveAdjacents(const Rect r, const Query query, double timeLe
   return ResultMoveAdjacents{false, Action{0, 0, 0, 0}, false};
 }
 
-// bool tryToApplyAction_rec(vector<Rect>& rects, const vector<Query>& queries, const Action&
-// action) {
+double calcDiffScore(const Rect& r1, const Rect& r2, const Query& query) {
+  auto r1r = r1.area();
+  auto r2r = r2.area();
+  auto qr = query.r;
+  return AMPSCORE * (Algo::calcScore(r2r, qr) - Algo::calcScore(r1r, qr));
+}
+
+// bool tryToApplyAction_push_rec(vector<Rect>& rects,
+//                                int index,
+//                                const Action& action,
+//                                const vector<Query>& queries) {
+//   // moveだけ expandにも適用できるはずだが、今はしない
+//   // Rect r1 = rects[index];  // before
+//   Rect r2 = rects[index];  // after
+//   action.apply(r2);
+//   if (r2.x < 0 || r2.y < 0 || r2.x + r2.w > WMAX || r2.y + r2.h > WMAX ||
+//       !r2.in(queries[index].y, queries[index].x)) {
+//     return false;
+//   }
+//   {
+//     // yieldありの当たり判定チェック C++17 は yield 使えなかったような気がする
+//     // キャッシュはimaha使わない
+//     rects[index] = {queries[index].y, queries[index].x, 1, 1};
+//     // stack<int> applied;  // TODO: これはツリー全体で共通じゃないとダメ
+//     repeat(j, (int)rects.size()) {
+//       if (j == index)
+//         continue;
+//       if (r2.crashTo(rects[j])) {
+//         // もし何かに当たったら、それもactionを適用する
+//         auto result = tryToApplyAction_push_rec(rects, j, action, queries);
+//         if (!result) {
+//           // NG
+//           // rects[index] = r1;
+//           // TODO: 今まで適用してしまったものを全て戻す必要がある
+//           return false;
+//         }
+//         // applied.push(j);
+//       }
+//     }
+//     // OK
+//     rects[index] = r2;
+//     return true;
+//   }
 // }
 
 pair<bool, double> tryToApplyAction_nopush(vector<Rect>& rects,
@@ -277,19 +318,33 @@ pair<bool, double> tryToApplyAction_nopush(vector<Rect>& rects,
   if (!never_hit && Algo::cachedCheckHit(rects, r2, hitting_history[index])) {
     // NG
     rects[index] = r1;
-    return pair<bool, double>{false, 0};
+    return {false, 0};
   } else {
     // OK
-    double score = 0;
-    if (r2.w != 0 && r2.h != 0) {
-      auto qr = queries[index].r;
-      score -= AMPSCORE * Algo::calcScore(r1.area(), qr);
-      score += AMPSCORE * Algo::calcScore(r2.area(), qr);
-    }
+    double score = (action.w != 0 || action.h != 0) ? calcDiffScore(r1, r2, queries[index]) : 0.0;
     rects[index] = r2;
-    return pair<bool, double>{true, score};
+    return {true, score};
   }
 }
+
+// pair<bool, double> tryToApplyAction_push(vector<Rect>& rects,
+//                                          int index,
+//                                          const Action& action,
+//                                          const vector<Query>& queries,
+//                                          vector<vector<int>>& hitting_history,
+//                                          bool never_hit) {
+//   if (never_hit || action.w != 0 || action.h != 0) {
+//     return tryToApplyAction_nopush(rects, index, action, queries, hitting_history, never_hit);
+//   } else {
+//     vector<Rect> rr = rects;
+//     auto res = tryToApplyAction_push_rec(rects, index, action, queries);
+//     if (!res) {
+//       // revert
+//       rects = std::move(rr);
+//     }
+//     return {res, 0.0};
+//   }
+// }
 
 double eliminateRects(vector<Rect>& rects,
                       const vector<Query>& queries,
@@ -430,6 +485,8 @@ void Solver::solve20(const Timer<>& timer) {
       continue;
     auto appres = Algo::tryToApplyAction_nopush(rects_, i, adjres.act, queries_, hitting_history,
                                                 adjres.never_hit);
+    // auto appres = Algo::tryToApplyAction_push(rects_, i, adjres.act, queries_, hitting_history,
+    //                                           adjres.never_hit);
     if (!appres.first)
       continue;
 
@@ -448,9 +505,9 @@ void Solver::solve20(const Timer<>& timer) {
           current_score = best_score;
         }
       }
-      if (!(lop & 1023) && tick_score_dump < timer.toc() / 100) {
+      if (!(lop & 1023) && tick_score_dump < timer.toc() / 250) {
         tick_score_dump++;
-        clog << best_score << '\n';
+        clog << best_score << ' ' << tick_score_dump * 250 << '\n';
       }
     }
     if (++lop_eliminate > 30000) {
