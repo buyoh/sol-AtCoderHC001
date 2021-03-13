@@ -118,7 +118,7 @@ vector<int> raiseWeakRect(const vector<Query>& queries, const vector<Rect>& rect
       res.push_back(i);
       continue;
     }
-    if (calcScore(rect.w * rect.h, query.r) < Threshold) {
+    if (calcScore(rect.area(), query.r) < Threshold) {
       res.push_back(i);
     };
   }
@@ -133,7 +133,7 @@ double calcScore(const vector<Query>& queries, const vector<Rect>& rects) {
     auto& query = queries[i];
     auto& rect = rects[i];
     if (rect.in(query.y, query.x)) {
-      total += calcScore(rect.w * rect.h, query.r);
+      total += calcScore(rect.area(), query.r);
     }
   }
   return total * AMPSCORE;
@@ -166,8 +166,8 @@ struct ResultMoveAdjacents {
 
 ResultMoveAdjacents moveAdjacents(const Rect r, const Query query, double timeLerp) {
   // コピーの方が良いか参照の方が良いか？→コピーのほうが速い
-  const bool expandable = query.r >= r.w * (r.h + 1) || query.r >= (r.w + 1) * r.h;
-  // const bool expandable = query.r > r.w * r.h;
+  const bool expandable = query.r >= int(r.w) * int(r.h + 1) || query.r >= int(r.w + 1) * int(r.h);
+  // const bool expandable = query.r > int(r.w) * int(r.h);
   int amp = 1;
   int maxAmp = 5 + static_cast<int>(timeLerp * 49);
   repeat(_, 29) {
@@ -383,7 +383,7 @@ class Solver {
  private:
   void solve00(const Timer<>& timer);
   void solve10(const Timer<>& timer);
-  void solve20(const Timer<>& timer);
+  void solve20(const Timer<>& timer, const int max_time);
 
   // TODO: rect + query structure?
   vector<Query> queries_;
@@ -412,7 +412,8 @@ void Solver::solve10(const Timer<>& timer) {
     int i = targets[vi];
     const auto& query = queries_[i];
     const auto& r = rects_[i];
-    const bool expandable = query.r >= r.w * (r.h + 1) || query.r >= (r.w + 1) * r.h;
+    const bool expandable =
+        query.r >= int(r.w) * int(r.h + 1) || query.r >= int(r.w + 1) * int(r.h);
     if (!expandable) {
       targets.erase(targets.begin() + vi);
       continue;
@@ -458,8 +459,8 @@ void Solver::solve10(const Timer<>& timer) {
   }
 }
 
-void Solver::solve20(const Timer<>& timer) {
-  constexpr int MaxTime = 5000;
+void Solver::solve20(const Timer<>& timer, const int MaxTime) {
+  // constexpr int MaxTime = 5000 - 15;
   const int N = queries_.size();
   int tick_score_dump = 2;
 
@@ -475,7 +476,7 @@ void Solver::solve20(const Timer<>& timer) {
 
   int lop = 0;
   int time = 0;
-  while ((lop & 127) || (time = timer.toc()) < MaxTime - 15) {
+  while ((lop & 127) || (time = timer.toc()) < MaxTime) {
     int i = rand(0, N - 1);
     const auto& query = queries_[i];
 
@@ -535,6 +536,77 @@ void Solver::solve20(const Timer<>& timer) {
   clog << "lop=" << lop << "\n";
 }
 
+#if 0
+// 合議制で3つ選出する
+// 3秒以降でも大きくスコアが伸びる訳でも無かったので、
+// 直列で3つ動かしてみる(1スレッドのはずなので)
+// スコアの変化は少なめだった。矩形は比較的ばらつきが出ている。
+void Solver::solve() {
+  Timer<> timer;
+
+  // 合議制を取る
+  pair<double, decltype(rects_)> best_snaps[4];
+  {
+    repeat(i, 4) {
+      best_snaps[i].first = 0;
+      best_snaps[i].second = rects_;
+    }
+    repeat(_, 300) {
+      solve00(timer);
+      solve10(timer);
+      double score = Algo::calcScore(queries_, rects_);  // TODO: 同じ評価基準で良いのか？
+      // 複雑にする理由はないし、以下は使わない
+      // double score = 0;
+      // repeat(i, (int)queries_.size()) {
+      //   double x = Algo::calcScore(queries_[i].r, rects_[i].area());
+      //   score += x > 0.4 ? x : 0;
+      // }
+      best_snaps[3].first = -score;
+      best_snaps[3].second.swap(rects_);
+      sort(best_snaps, best_snaps + 4,
+           [](const pair<double, decltype(rects_)>& l, const pair<double, decltype(rects_)>& r) {
+             return l.first < r.first;
+           });
+    }
+    // clog << "solve00-10 time: " << timer.toc() << " score: " << best_score << endl;
+    // rects_ = std::move(best_snap);  // 1650
+  }
+
+  int tt = timer.toc();
+  clog << "solve00-10 time: " << timer.toc() << "\n";
+  int remtime = 4950 - tt;
+
+  double best_score = -1;
+  decltype(rects_) best_snap;
+  repeat(i, 3) {
+    Timer<> timer2;
+    rects_ = move(best_snaps[i].second);
+    solve20(timer2, remtime / 3);
+    double score = Algo::calcScore(queries_, rects_);
+    if (best_score < score) {
+      best_snap = rects_;
+      best_score = score;
+    }
+    clog << "> " << -best_snaps[i].first << " -> " << score << "\n";
+#if 0
+    {
+      std::string fn = "dump";
+      fn += to_string(i);
+      auto p = fopen(fn.c_str(), "w");
+      MaiPrinter pr(p);
+      for (auto& r : rects_) {
+        r.print(pr);
+        pr << '\n';
+      }
+      pr << '\n';
+      fclose(p);
+    }
+#endif
+  }
+  rects_ = best_snap;
+}
+#else
+
 void Solver::solve() {
   Timer<> timer;
 
@@ -561,8 +633,10 @@ void Solver::solve() {
     rects_ = std::move(best_snap);
   }
 
-  solve20(timer);
+  solve20(timer, 4950);
 }
+
+#endif
 
 // ----------------------------------------------------------------------------
 

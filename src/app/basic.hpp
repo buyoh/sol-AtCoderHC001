@@ -6,7 +6,8 @@
 #endif
 
 struct Query {
-  int y, x, r;
+  int y, x;
+  int r;
 
   template <typename I>
   static Query createScan(I& i) {
@@ -21,7 +22,7 @@ struct Query {
 };
 
 struct Rect {
-  int y, x, h, w;  // TODO: 面積を除いてshortで十分
+  int y, x, h, w;  // 面積を除いてshortで十分…だが対して早くならなかった
   template <typename O>
   void print(O& o) const {
     o << x << ' ' << y << ' ' << x + w << ' ' << y + h;
@@ -36,7 +37,7 @@ struct Rect {
     int dy = abs(y1 - y2);
     return dx < (w + r.w) && dy < (h + r.h);
   }
-  inline int area() const { return w * h; }
+  inline int area() const { return int(w) * int(h); }
   inline bool in(int py, int px) const { return y <= py && py < y + h && x <= px && px < x + w; }
 };
 template <typename O>
