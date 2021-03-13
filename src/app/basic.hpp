@@ -37,7 +37,7 @@ struct Rect {
     return dx < (w + r.w) && dy < (h + r.h);
   }
   inline int area() const { return w * h; }
-  inline bool in(int py, int px) const { return y <= py && py < py + h && x <= px && px < x + w; }
+  inline bool in(int py, int px) const { return y <= py && py < y + h && x <= px && px < x + w; }
 };
 template <typename O>
 O& operator<<(O& o, const Rect& rect) {
