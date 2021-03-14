@@ -81,6 +81,10 @@ int checkHitIndex(const vector<Rect>& rects, const Rect& rect) {
 //   return -1;
 // }
 
+inline bool expandable(Rect r, Query query) {
+  return query.r >= int(r.w) * int(r.h + 1) || query.r >= int(r.w + 1) * int(r.h);
+}
+
 bool cachedCheckHit(const vector<Rect>& rects, const Rect& rect, vector<int>& hitting_history) {
   // TODO: 高速化
   // オーダー改善は何も思い浮かばないので、キャッシュ高速化を考えてみる。
@@ -161,40 +165,43 @@ struct ResultMoveAdjacents {
   bool never_hit;
 };
 
-ResultMoveAdjacents moveAdjacents(const Rect r, const Query query, double timeLerp) {
+ResultMoveAdjacents moveAdjacents(const Rect r, const Query query, double timeLerp, int cmd = -1) {
   // コピーの方が良いか参照の方が良いか？→コピーのほうが速い
-  const bool expandable = query.r >= int(r.w) * int(r.h + 1) || query.r >= int(r.w + 1) * int(r.h);
-  // const bool expandable = query.r > int(r.w) * int(r.h);
+  const bool expandabl = Algo::expandable(r, query);
   int amp = 1;
-  int maxAmp = 49 + static_cast<int>(timeLerp * 49);
-  repeat(_, 29) {
+  // int maxAmp = 49 + static_cast<int>(timeLerp * 49);
+  int maxAmp = 9 + static_cast<int>(timeLerp * 99);
+  repeat(_, 19) {
     int k;
     amp = rand(1, maxAmp);
-    if (!expandable)
-      k = rand(4, 11);
-    else
-      k = rand(0, 11);
+    if (cmd == -1) {
+      if (!expandabl)
+        k = rand(4, 11);
+      else
+        k = rand(0, 11);
+    } else
+      k = cmd;
     if (k == 0) {
       // 拡大の実装
-      if (r.x <= 0 || !expandable)
+      if (r.x <= 0)
         continue;
       // r.x -= 1;
       // r.w += 1;
       return {true, Action{0, -1, 0, 1}, false};
       break;
     } else if (k == 1) {
-      if (r.x + r.w >= WMAX || !expandable)
+      if (r.x + r.w >= WMAX)
         continue;
       // r.w += 1;
       return {true, Action{0, 0, 0, 1}, false};
     } else if (k == 2) {
-      if (r.y <= 0 || !expandable)
+      if (r.y <= 0)
         continue;
       // r.y -= 1;
       // r.h += 1;
       return {true, Action{-1, 0, 1, 0}, false};
     } else if (k == 3) {
-      if (r.y + r.h >= WMAX || !expandable)
+      if (r.y + r.h >= WMAX)
         continue;
       // r.h += 1;
       return {true, Action{0, 0, 1, 0}, false};
@@ -413,9 +420,7 @@ void Solver::solve10(const Timer<>& timer) {
     int i = targets[vi];
     const auto& query = queries_[i];
     const auto& r = rects_[i];
-    const bool expandable =
-        query.r >= int(r.w) * int(r.h + 1) || query.r >= int(r.w + 1) * int(r.h);
-    if (!expandable) {
+    if (!Algo::expandable(r, query)) {
       targets.erase(targets.begin() + vi);
       continue;
     }
@@ -491,18 +496,28 @@ void Solver::solve20(const Timer<>& timer, const int MaxTime) {
     const int i = lop % N;
     const auto& query = queries_[i];
 
-    auto adjres = Algo::moveAdjacents(rects_[i], query, double(time) / MaxTime);
     ++lop;
-    if (!adjres.changed)
-      continue;
-    auto appres = Algo::tryToApplyAction_nopush(rects_, i, adjres.act, queries_, hitting_history,
-                                                adjres.never_hit);
-    // auto appres = Algo::tryToApplyAction_push(rects_, i, adjres.act, queries_, hitting_history,
-    //                                           adjres.never_hit);
-    if (!appres.first)
-      continue;
+    const bool expandable = Algo::expandable(rects_[i], query);
+    int cmd;
+    if (!expandable)
+      cmd = rand(4, 11);
+    else
+      cmd = rand(0, 11);
 
-    current_score += appres.second;
+    double tl = 1.0;
+    repeat(_, 9) {
+      // auto adjres = Algo::moveAdjacents(rects_[i], query, double(time) / MaxTime, cmd);
+      auto adjres = Algo::moveAdjacents(rects_[i], query, tl, cmd);  // timeじゃないが
+      tl *= 0.8;
+      if (!adjres.changed)
+        goto l_large_continue;
+      auto appres = Algo::tryToApplyAction_nopush(rects_, i, adjres.act, queries_, hitting_history,
+                                                  adjres.never_hit);
+      if (!appres.first)
+        continue;
+      current_score += appres.second;
+      break;
+    }
 
     {
       if (best_score < current_score) {
@@ -537,6 +552,7 @@ void Solver::solve20(const Timer<>& timer, const int MaxTime) {
     //        << Algo::calcScore(queries_, rects_) << endl;
     //   abort();
     // }
+  l_large_continue:;
   }
   {
     double score = Algo::calcScore(queries_, rects_);
