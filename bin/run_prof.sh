@@ -4,6 +4,7 @@ set -eu
 cd `dirname $0`/..
 
 cd out
+rm ./main.gcda
 ./main_prof
 # gprof ./main_prof ./gmon.out > ./profile.txt
 # gprof -A ./main_prof ./gmon.out > ./profile-a.txt
